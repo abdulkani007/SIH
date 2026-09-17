@@ -49,7 +49,11 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
           if (onLoginSuccess) onLoginSuccess();
         }, 400);
       } catch (err: any) {
-        setFeedback({ type: "error", message: err.message || "Failed to sign in. Please verify credentials." });
+        const msg = typeof err === "string" ? err : err?.message;
+        setFeedback({
+          type: "error",
+          message: msg && msg !== "[object Object]" ? msg : "Failed to sign in. Please verify credentials.",
+        });
       } finally {
         setIsLoading(false);
       }
@@ -73,6 +77,7 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
           username: cleanName,
           email: cleanEmail,
           password,
+          agency: sector,
           agreeToTerms: true,
         });
         setFeedback({ type: "success", message: "Account created successfully! Connecting to operations workstation..." });
@@ -80,7 +85,11 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
           if (onLoginSuccess) onLoginSuccess();
         }, 500);
       } catch (err: any) {
-        setFeedback({ type: "error", message: err.message || "Failed to create account." });
+        const msg = typeof err === "string" ? err : err?.message;
+        setFeedback({
+          type: "error",
+          message: msg && msg !== "[object Object]" ? msg : "Failed to create account. Please check your details.",
+        });
       } finally {
         setIsLoading(false);
       }

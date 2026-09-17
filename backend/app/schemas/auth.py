@@ -5,9 +5,10 @@ from pydantic import BaseModel, EmailStr, Field
 class UserBase(BaseModel):
     email: EmailStr
     username: str
+    agency: Optional[str] = None
 
 class UserRegister(UserBase):
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=6)
     agree_to_terms: bool = True
 
 class UserLogin(BaseModel):

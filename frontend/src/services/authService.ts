@@ -16,6 +16,7 @@ export interface SignUpData {
   username: string;
   email: string;
   password: string;
+  agency?: string;
   agreeToTerms: boolean;
 }
 
@@ -23,6 +24,7 @@ export interface UserProfile {
   id?: string;
   username: string;
   email: string;
+  agency?: string;
 }
 
 export interface AuthResponse {
@@ -47,6 +49,39 @@ export interface SavedAccount {
 import { getApiUrl } from "../config/api";
 
 const API_BASE = getApiUrl("/api/auth");
+
+/**
+ * Format backend API errors (strings, Pydantic arrays, nested objects) into clean user messages
+ */
+export function formatApiError(errData: any, fallback: string): string {
+  if (!errData) return fallback;
+  if (typeof errData === "string") return errData;
+  if (typeof errData.detail === "string") return errData.detail;
+  if (Array.isArray(errData.detail)) {
+    const msgs = errData.detail
+      .map((item: any) => {
+        if (typeof item === "string") return item;
+        if (item && item.msg) {
+          const loc = Array.isArray(item.loc)
+            ? item.loc.filter((p: any) => p !== "body").join(" ")
+            : "";
+          if (loc) {
+            const field = loc.charAt(0).toUpperCase() + loc.slice(1);
+            return `${field}: ${item.msg}`;
+          }
+          return item.msg;
+        }
+        return null;
+      })
+      .filter(Boolean);
+    if (msgs.length > 0) return msgs.join(". ");
+  }
+  if (errData.detail && typeof errData.detail === "object") {
+    return errData.detail.msg || JSON.stringify(errData.detail);
+  }
+  if (typeof errData.message === "string") return errData.message;
+  return fallback;
+}
 
 export const authService = {
   /**
@@ -177,7 +212,7 @@ export const authService = {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || "Invalid email or password. Please verify your credentials.");
+      throw new Error(formatApiError(errData, "Invalid email or password. Please verify your credentials."));
     }
 
     const data = await response.json();
@@ -186,6 +221,7 @@ export const authService = {
       id: data.user?.id,
       username: data.user?.username || cleanEmail.split("@")[0],
       email: data.user?.email || cleanEmail,
+      agency: data.user?.agency,
     };
 
     localStorage.setItem("stormguard_token", token);
@@ -223,6 +259,7 @@ export const authService = {
           username: cleanUsername,
           email: cleanEmail,
           password: data.password,
+          agency: data.agency || undefined,
           agree_to_terms: data.agreeToTerms,
         }),
       });
@@ -232,7 +269,7 @@ export const authService = {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || "Failed to create account. Please check your details.");
+      throw new Error(formatApiError(errData, "Failed to create account. Please check your details."));
     }
 
     const dataRes = await response.json();
@@ -241,6 +278,7 @@ export const authService = {
       id: dataRes.user?.id,
       username: dataRes.user?.username || cleanUsername,
       email: dataRes.user?.email || cleanEmail,
+      agency: dataRes.user?.agency || data.agency,
     };
 
     localStorage.setItem("stormguard_token", token);
@@ -275,9 +313,14 @@ export const authService = {
           success: true,
           message: resData.message || `Password reset instructions sent to ${data.email}`,
         };
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(formatApiError(errData, "Failed to send password reset request."));
       }
-    } catch {
-      // Fall through
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) {
+        throw err;
+      }
     }
 
     return {

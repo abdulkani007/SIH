@@ -18,6 +18,7 @@ class AuthService:
             "id": user_id,
             "email": email,
             "username": data.username.strip(),
+            "agency": getattr(data, "agency", None),
             "hashed_password": hashed_pw,
             "created_at": datetime.utcnow(),
         }
@@ -44,6 +45,7 @@ class AuthService:
             id=user_id,
             email=email,
             username=data.username,
+            agency=getattr(data, "agency", None),
             created_at=user_doc["created_at"],
         )
         token = create_access_token(subject=user_id)
@@ -70,6 +72,7 @@ class AuthService:
             id=user_doc["id"],
             email=user_doc["email"],
             username=user_doc["username"],
+            agency=user_doc.get("agency"),
             created_at=user_doc["created_at"],
         )
         token = create_access_token(subject=user_doc["id"])
@@ -93,6 +96,7 @@ class AuthService:
             id=user_doc["id"],
             email=user_doc["email"],
             username=user_doc["username"],
+            agency=user_doc.get("agency"),
             created_at=user_doc["created_at"],
         )
 
