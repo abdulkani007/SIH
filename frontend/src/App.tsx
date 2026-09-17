@@ -2,14 +2,21 @@ import { useState, useEffect } from "react";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
+import { authService } from "@/services/authService";
 
 export type PageRoute = "login" | "landing" | "dashboard";
 
 export default function App() {
   const getInitialRoute = (): PageRoute => {
     const path = window.location.pathname.toLowerCase();
-    if (path === "/dashboard") return "dashboard";
-    if (path === "/login") return "login";
+    const isAuthed = authService.isAuthenticated();
+
+    if (path === "/dashboard") {
+      return isAuthed ? "dashboard" : "login";
+    }
+    if (path === "/login") {
+      return isAuthed ? "dashboard" : "login";
+    }
     // Default to landing page on root /
     return "landing";
   };
@@ -17,12 +24,31 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageRoute>(getInitialRoute);
 
   const navigateTo = (page: PageRoute) => {
-    setCurrentPage(page);
-    const url = page === "login" ? "/login" : page === "dashboard" ? "/dashboard" : "/";
-    window.history.pushState({ page }, "", url);
+    let target = page;
+    if (target === "dashboard" && !authService.isAuthenticated()) {
+      target = "login";
+    }
+    setCurrentPage(target);
+    const url = target === "login" ? "/login" : target === "dashboard" ? "/dashboard" : "/";
+    window.history.pushState({ page: target }, "", url);
+  };
+
+  const handleLogout = () => {
+    authService.signOut();
+    setCurrentPage("login");
+    window.history.pushState({ page: "login" }, "", "/login");
   };
 
   useEffect(() => {
+    // If user has a token, verify active session against backend
+    if (authService.isAuthenticated()) {
+      authService.getProfile().then((profile) => {
+        if (!profile) {
+          handleLogout();
+        }
+      });
+    }
+
     const handlePopState = () => {
       setCurrentPage(getInitialRoute());
     };
@@ -39,7 +65,7 @@ export default function App() {
       }
     >
       {currentPage === "dashboard" && (
-        <Dashboard onLogout={() => navigateTo("login")} />
+        <Dashboard onLogout={handleLogout} />
       )}
       {currentPage === "login" && (
         <Login

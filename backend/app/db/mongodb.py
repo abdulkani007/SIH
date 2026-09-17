@@ -30,6 +30,11 @@ async def connect_to_mongo():
         await db_manager.client.server_info()
         db_manager.db = db_manager.client[settings.MONGODB_DB_NAME]
         db_manager.is_connected = True
+        try:
+            await db_manager.db.users.create_index("email", unique=True)
+            await db_manager.db.users.create_index("id", unique=True)
+        except Exception as idx_err:
+            logger.warning(f"Could not create user indexes: {idx_err}")
         logger.info("Successfully connected to MongoDB Atlas / Local MongoDB instance.")
     except Exception as e:
         logger.warning(

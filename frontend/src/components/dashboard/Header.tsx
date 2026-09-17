@@ -22,7 +22,7 @@ import {
   type ActiveLocation,
   type GeocodedLocationResult,
 } from "@/services/locationService";
-import { authService } from "@/services/authService";
+import { authService, type UserProfile } from "@/services/authService";
 import type { AlertLog } from "@/data/mockWeather";
 
 interface HeaderProps {
@@ -39,6 +39,7 @@ interface HeaderProps {
   onCoordinatesResolved?: (coords: GeoCoordinates) => void;
   alerts?: AlertLog[];
   onLogout?: () => void;
+  currentUser?: UserProfile | null;
 }
 
 const NAV_TABS = [
@@ -64,6 +65,7 @@ export default function Header({
   onCoordinatesResolved,
   alerts = [],
   onLogout,
+  currentUser,
 }: HeaderProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -120,9 +122,9 @@ export default function Header({
     setTimeout(() => setIsRefreshing(false), 700);
   };
 
-  const currentUser = authService.getCurrentUser();
-  const userName = currentUser?.username || "Abdul";
-  const userEmail = currentUser?.email || "abdul@stormguard.net";
+  const activeUser = currentUser || authService.getCurrentUser();
+  const userName = activeUser?.username || "Authorized Operator";
+  const userEmail = activeUser?.email || "operator@stormguard.ai";
   const initials = authService.getInitials(userName);
 
   const displayLocation = coords?.district
@@ -438,6 +440,7 @@ export default function Header({
                     type="button"
                     onClick={() => {
                       setIsUserMenuOpen(false);
+                      authService.signOut();
                       onLogout?.();
                     }}
                     className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer"

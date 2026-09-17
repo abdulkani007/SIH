@@ -60,21 +60,6 @@ class AuthService:
         else:
             user_doc = db_manager.memory_store["users"].get(email)
 
-        # Demo fallback: If no user found and using demo credentials, provision demo user
-        if not user_doc and email.endswith("@example.com"):
-            user_id = f"usr_{uuid.uuid4().hex[:12]}"
-            user_doc = {
-                "id": user_id,
-                "email": email,
-                "username": email.split("@")[0],
-                "hashed_password": get_password_hash(data.password),
-                "created_at": datetime.utcnow(),
-            }
-            if db is not None:
-                await db.users.insert_one(user_doc)
-            else:
-                db_manager.memory_store["users"][email] = user_doc
-
         if not user_doc or not verify_password(data.password, user_doc["hashed_password"]):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

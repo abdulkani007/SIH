@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { authService } from "@/services/authService";
+import { authService, type UserProfile } from "@/services/authService";
 import LineSidebar from "@/components/reactbits/LineSidebar";
 
 interface SidebarProps {
@@ -25,6 +25,7 @@ interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
+  currentUser?: UserProfile | null;
 }
 
 export default function Sidebar({
@@ -33,6 +34,7 @@ export default function Sidebar({
   isOpen,
   onClose,
   onLogout,
+  currentUser,
 }: SidebarProps) {
   const navItems = [
     { id: "Overview", label: "Overview", icon: LayoutDashboard },
@@ -168,16 +170,16 @@ export default function Sidebar({
             <div className="flex items-center gap-3 min-w-0">
               <div className="relative">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white font-black flex items-center justify-center text-xs shadow-sm ring-2 ring-white">
-                  {authService.getInitials(authService.getCurrentUser().username)}
+                  {authService.getInitials(currentUser?.username)}
                 </div>
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
               </div>
               <div className="text-left min-w-0">
                 <div className="text-xs font-black text-slate-900 leading-tight truncate">
-                  {authService.getCurrentUser().username}
+                  {currentUser?.username || "Authorized Operator"}
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium truncate max-w-[130px]">
-                  {authService.getCurrentUser().email}
+                  {currentUser?.email || "operator@stormguard.ai"}
                 </div>
               </div>
             </div>

@@ -1,8 +1,9 @@
 /**
- * StormGuard AI Authentication Service
+ * StormGuard AI Authentication Service - Production Architecture
  *
- * Connects directly to FastAPI backend (/api/auth) with resilient local fallback.
- * Persists authenticated user profiles (name, email, initials) across sessions.
+ * Connects directly to FastAPI backend (/api/auth) backed by MongoDB Atlas.
+ * Enforces strict JWT token authentication, user-specific data isolation,
+ * and complete session clearance on sign out.
  */
 
 export interface SignInCredentials {
@@ -49,91 +50,41 @@ const API_BASE = getApiUrl("/api/auth");
 
 export const authService = {
   /**
-   * Retrieve all saved / previously logged in accounts
+   * Check if an active authenticated token exists
    */
-  getSavedAccounts(): SavedAccount[] {
+  getToken(): string | null {
     try {
-      const raw = localStorage.getItem("stormguard_saved_accounts");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch {}
-
-    // If current logged-in user exists in storage, make them the initial saved account
-    try {
-      const userRaw = localStorage.getItem("stormguard_user");
-      if (userRaw) {
-        const u = JSON.parse(userRaw);
-        if (u && u.email) {
-          const initial: SavedAccount = {
-            id: u.id || "usr_active",
-            name: u.username || u.email.split("@")[0],
-            email: u.email,
-            lastActive: "Active today",
-          };
-          localStorage.setItem("stormguard_saved_accounts", JSON.stringify([initial]));
-          return [initial];
-        }
-      }
-    } catch {}
-
-    return [];
+      return (
+        localStorage.getItem("stormguard_token") ||
+        sessionStorage.getItem("stormguard_token") ||
+        null
+      );
+    } catch {
+      return null;
+    }
   },
 
   /**
-   * Save an account to the recent logins list
+   * Check if user is currently authenticated
    */
-  saveAccount(account: { id?: string; name: string; email: string; avatar?: string }): void {
-    try {
-      let accounts = this.getSavedAccounts();
-      const existingIdx = accounts.findIndex(
-        (a) => a.email.toLowerCase() === account.email.toLowerCase()
-      );
-
-      const existingEntry = existingIdx >= 0 ? accounts[existingIdx] : null;
-      const prevName = existingEntry?.name || "";
-      const isBetterPrevName = prevName && !prevName.includes("@") && prevName !== account.email.split("@")[0];
-
-      const entry: SavedAccount = {
-        id: account.id || existingEntry?.id || "usr_" + Math.random().toString(36).substr(2, 9),
-        name: isBetterPrevName ? prevName : (account.name || account.email.split("@")[0]),
-        email: account.email,
-        lastActive: "Active just now",
-        avatar: account.avatar || existingEntry?.avatar,
-      };
-
-      if (existingIdx >= 0) {
-        accounts.splice(existingIdx, 1);
-      }
-      accounts = [entry, ...accounts].slice(0, 4);
-
-      localStorage.setItem("stormguard_saved_accounts", JSON.stringify(accounts));
-    } catch {}
+  isAuthenticated(): boolean {
+    const token = this.getToken();
+    const user = this.getCurrentUser();
+    return Boolean(token && user && user.email);
   },
 
   /**
-   * Remove a saved account from the recent logins list
+   * Retrieve active authenticated user profile from storage
+   * Returns null if not logged in - NO hardcoded/default user!
    */
-  removeSavedAccount(email: string): void {
-    try {
-      let accounts = this.getSavedAccounts();
-      accounts = accounts.filter(
-        (a) => a.email.toLowerCase() !== email.toLowerCase()
-      );
-      localStorage.setItem("stormguard_saved_accounts", JSON.stringify(accounts));
-    } catch {}
-  },
-  getCurrentUser(): UserProfile {
+  getCurrentUser(): UserProfile | null {
     try {
       const raw =
         localStorage.getItem("stormguard_user") ||
         sessionStorage.getItem("stormguard_user");
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed && (parsed.username || parsed.email)) {
+        if (parsed && parsed.email) {
           return {
             id: parsed.id,
             username: parsed.username || parsed.email.split("@")[0],
@@ -143,19 +94,52 @@ export const authService = {
       }
     } catch {}
 
-    // Clean user profile default if opened directly
-    return {
-      username: "Abdul Kani",
-      email: "abdul.kani@operations.stormguard.ai",
-    };
+    return null;
   },
 
   /**
-   * Generate 1-2 letter uppercase initials from full name
-   * Example: "Abdul Kani" -> "AK", "Abdul" -> "AK"
+   * Fetch authenticated profile from backend /api/auth/me to verify token validity
+   */
+  async getProfile(): Promise<UserProfile | null> {
+    const token = this.getToken();
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const profile: UserProfile = {
+          id: data.id,
+          username: data.username,
+          email: data.email,
+        };
+        localStorage.setItem("stormguard_user", JSON.stringify(profile));
+        return profile;
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        this.signOut();
+        return null;
+      }
+    } catch (err) {
+      console.warn("Could not reach auth server to verify profile:", err);
+    }
+
+    return this.getCurrentUser();
+  },
+
+  /**
+   * Generate 1-2 letter uppercase initials from name
    */
   getInitials(name?: string): string {
-    if (!name || !name.trim()) return "AK";
+    if (!name || !name.trim()) return "U";
     const clean = name.trim().replace(/[^a-zA-Z\s]/g, "");
     const parts = clean.split(/\s+/).filter(Boolean);
     if (parts.length >= 2) {
@@ -164,168 +148,114 @@ export const authService = {
     if (parts.length === 1 && parts[0].length >= 2) {
       return parts[0].slice(0, 2).toUpperCase();
     }
-    return (name[0] || "A").toUpperCase();
+    return (name[0] || "U").toUpperCase();
   },
 
   /**
-   * Authenticate user with email and password via FastAPI
+   * Authenticate user with email and password via production backend
    */
   async signIn(credentials: SignInCredentials): Promise<AuthResponse> {
-    if (!credentials.email || !credentials.password) {
+    const cleanEmail = credentials.email.trim().toLowerCase();
+    if (!cleanEmail || !credentials.password) {
       throw new Error("Email and password are required.");
     }
 
+    let response: Response;
     try {
-      const response = await fetch(`${API_BASE}/login`, {
+      response = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: credentials.email,
+          email: cleanEmail,
           password: credentials.password,
           remember_me: credentials.rememberMe || false,
         }),
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (credentials.rememberMe && data.access_token) {
-          localStorage.setItem("stormguard_token", data.access_token);
-        } else if (data.access_token) {
-          sessionStorage.setItem("stormguard_token", data.access_token);
-        }
-
-        // Check if there is an existing local profile or saved account for this email
-        const savedList = this.getSavedAccounts();
-        const savedEntry = savedList.find(
-          (a) => a.email.toLowerCase() === credentials.email.toLowerCase()
-        );
-        const existing = this.getCurrentUser();
-        const resolvedName =
-          data.user?.username ||
-          savedEntry?.name ||
-          (existing && existing.email.toLowerCase() === credentials.email.toLowerCase() ? existing.username : null) ||
-          credentials.email.split("@")[0];
-
-        const userProfile: UserProfile = {
-          id: data.user?.id || savedEntry?.id || "usr_active",
-          username: resolvedName,
-          email: credentials.email,
-        };
-
-        localStorage.setItem("stormguard_user", JSON.stringify(userProfile));
-        this.saveAccount({ id: userProfile.id, name: userProfile.username, email: userProfile.email });
-
-        return {
-          success: true,
-          message: data.message || "Sign in successful! Session initialized.",
-          user: userProfile,
-          token: data.access_token,
-        };
-      }
-
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || "Authentication failed. Please verify credentials.");
     } catch (err: any) {
-      if (err.message && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
-        throw err;
-      }
-
-      // Resilient fallback
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const savedList = this.getSavedAccounts();
-      const savedEntry = savedList.find(
-        (a) => a.email.toLowerCase() === credentials.email.toLowerCase()
-      );
-      const existing = this.getCurrentUser();
-      const resolvedName =
-        savedEntry?.name ||
-        (existing && existing.email.toLowerCase() === credentials.email.toLowerCase() ? existing.username : null) ||
-        credentials.email.split("@")[0];
-
-      const userProfile: UserProfile = {
-        id: savedEntry?.id || "usr_" + Math.random().toString(36).substr(2, 9),
-        username: resolvedName,
-        email: credentials.email,
-      };
-
-      localStorage.setItem("stormguard_user", JSON.stringify(userProfile));
-      this.saveAccount({ id: userProfile.id, name: userProfile.username, email: userProfile.email });
-
-      return {
-        success: true,
-        message: "Sign in successful!",
-        user: userProfile,
-        token: "jwt_session_" + Date.now(),
-      };
+      throw new Error("Unable to connect to authentication server. Please check your connection.");
     }
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || "Invalid email or password. Please verify your credentials.");
+    }
+
+    const data = await response.json();
+    const token = data.access_token;
+    const userProfile: UserProfile = {
+      id: data.user?.id,
+      username: data.user?.username || cleanEmail.split("@")[0],
+      email: data.user?.email || cleanEmail,
+    };
+
+    localStorage.setItem("stormguard_token", token);
+    localStorage.setItem("stormguard_user", JSON.stringify(userProfile));
+
+    return {
+      success: true,
+      message: data.message || "Sign in successful! Session initialized.",
+      user: userProfile,
+      token,
+    };
   },
 
   /**
-   * Register a new user account via FastAPI
+   * Register a new user account via production backend
    */
   async signUp(data: SignUpData): Promise<AuthResponse> {
+    const cleanUsername = data.username.trim();
+    const cleanEmail = data.email.trim().toLowerCase();
+
+    if (!cleanUsername || !cleanEmail || !data.password) {
+      throw new Error("Please complete all required registration fields.");
+    }
+
     if (!data.agreeToTerms) {
       throw new Error("You must agree to the Terms & Conditions.");
     }
 
-    const newUserProfile: UserProfile = {
-      id: "usr_" + Math.random().toString(36).substr(2, 9),
-      username: data.username.trim(),
-      email: data.email.trim(),
-    };
-
-    // Store user immediately so dashboard has user identity
-    localStorage.setItem("stormguard_user", JSON.stringify(newUserProfile));
-    this.saveAccount({ id: newUserProfile.id, name: newUserProfile.username, email: newUserProfile.email });
-
+    let response: Response;
     try {
-      const response = await fetch(`${API_BASE}/signup`, {
+      response = await fetch(`${API_BASE}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: data.username.trim(),
-          email: data.email.trim(),
+          username: cleanUsername,
+          email: cleanEmail,
           password: data.password,
           agree_to_terms: data.agreeToTerms,
         }),
       });
-
-      if (response.ok) {
-        const resData = await response.json();
-        if (resData.access_token) {
-          localStorage.setItem("stormguard_token", resData.access_token);
-        }
-        if (resData.user) {
-          newUserProfile.id = resData.user.id;
-          localStorage.setItem("stormguard_user", JSON.stringify(newUserProfile));
-        }
-        return {
-          success: true,
-          message: resData.message || "Account created successfully! Welcome to StormGuard AI.",
-          user: newUserProfile,
-          token: resData.access_token,
-        };
-      }
-
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.detail || "Failed to create account. Please try again.");
     } catch (err: any) {
-      if (err.message && !err.message.includes("Failed to fetch") && !err.message.includes("NetworkError")) {
-        throw err;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return {
-        success: true,
-        message: "Account created successfully! Welcome to StormGuard AI.",
-        user: newUserProfile,
-        token: "jwt_session_" + Date.now(),
-      };
+      throw new Error("Unable to connect to authentication server. Please check your connection.");
     }
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.detail || "Failed to create account. Please check your details.");
+    }
+
+    const dataRes = await response.json();
+    const token = dataRes.access_token;
+    const userProfile: UserProfile = {
+      id: dataRes.user?.id,
+      username: dataRes.user?.username || cleanUsername,
+      email: dataRes.user?.email || cleanEmail,
+    };
+
+    localStorage.setItem("stormguard_token", token);
+    localStorage.setItem("stormguard_user", JSON.stringify(userProfile));
+
+    return {
+      success: true,
+      message: dataRes.message || "Account created successfully! Welcome to StormGuard AI.",
+      user: userProfile,
+      token,
+    };
   },
 
   /**
-   * Send password reset telemetry email link via FastAPI
+   * Send password reset request via backend
    */
   async requestPasswordReset(data: ResetPasswordRequest): Promise<AuthResponse> {
     if (!data.email) {
@@ -336,7 +266,7 @@ export const authService = {
       const response = await fetch(`${API_BASE}/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.email }),
+        body: JSON.stringify({ email: data.email.trim().toLowerCase() }),
       });
 
       if (response.ok) {
@@ -347,10 +277,9 @@ export const authService = {
         };
       }
     } catch {
-      // Fallback
+      // Fall through
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
     return {
       success: true,
       message: `Password reset instructions sent to ${data.email}`,
@@ -358,10 +287,21 @@ export const authService = {
   },
 
   /**
-   * Terminate active session
+   * Terminate active session - completely clears all user tokens and data
    */
   signOut() {
-    localStorage.removeItem("stormguard_token");
-    sessionStorage.removeItem("stormguard_token");
+    try {
+      localStorage.removeItem("stormguard_token");
+      sessionStorage.removeItem("stormguard_token");
+      localStorage.removeItem("stormguard_user");
+      sessionStorage.removeItem("stormguard_user");
+      localStorage.removeItem("stormguard_saved_accounts");
+    } catch {}
   },
+
+  getSavedAccounts(): SavedAccount[] {
+    return [];
+  },
+  saveAccount(_account: any) {},
+  removeSavedAccount(_email: string) {},
 };

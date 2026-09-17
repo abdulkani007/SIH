@@ -39,6 +39,7 @@ import {
 } from "@/data/mockWeather";
 
 import { weatherService } from "@/services/weatherService";
+import { authService, type UserProfile } from "@/services/authService";
 import {
   locationService,
   type NearestStation,
@@ -53,6 +54,24 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => authService.getCurrentUser());
+
+  useEffect(() => {
+    // If not authenticated or profile cannot be verified, trigger logout
+    if (!authService.isAuthenticated()) {
+      onLogout();
+      return;
+    }
+
+    authService.getProfile().then((profile) => {
+      if (!profile) {
+        onLogout();
+      } else {
+        setCurrentUser(profile);
+      }
+    });
+  }, [onLogout]);
+
   const [currentTab, setCurrentTab] = useState("Overview");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
@@ -350,6 +369,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={onLogout}
+        currentUser={currentUser}
       />
 
       {/* Main Column - Right side only scrolls */}
@@ -369,6 +389,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           onCoordinatesResolved={handleCoordinatesResolved}
           alerts={alerts}
           onLogout={onLogout}
+          currentUser={currentUser}
         />
 
         {/* Operations Storm Simulation Modal */}

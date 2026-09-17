@@ -1,17 +1,15 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   Shield,
   ArrowLeft,
   Eye,
   EyeOff,
-  X,
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
 import ForgotPasswordModal from "@/components/ui/forgot-password";
-import { authService, type SavedAccount } from "@/services/authService";
+import { authService } from "@/services/authService";
 
 interface LoginProps {
   onNavigateHome?: () => void;
@@ -23,21 +21,8 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Dynamic Saved Accounts from storage
-  const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>(() => {
-    return authService.getSavedAccounts();
-  });
-
-  const [activeProfileId, setActiveProfileId] = useState<string | null>(() => {
-    const list = authService.getSavedAccounts();
-    return list.length > 0 ? list[0].id : null;
-  });
-
-  // Form states - initialized with most recent account or clean empty
-  const [email, setEmail] = useState<string>(() => {
-    const list = authService.getSavedAccounts();
-    return list.length > 0 ? list[0].email : "";
-  });
+  // Form states - strictly initialized clean for every session
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [sector, setSector] = useState("Disaster Management (NDMA / SDRF)");
@@ -45,81 +30,55 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "error" | "success"; message: string } | null>(null);
 
-  // Sync saved accounts whenever component mounts or window gains focus
-  useEffect(() => {
-    const accounts = authService.getSavedAccounts();
-    setSavedAccounts(accounts);
-    if (accounts.length > 0) {
-      setActiveProfileId(accounts[0].id);
-      setEmail(accounts[0].email);
-    }
-  }, []);
-
-  const handleSelectProfile = (profile: SavedAccount) => {
-    setActiveMode("signin");
-    setActiveProfileId(profile.id);
-    setEmail(profile.email);
-    setPassword("");
-    setFeedback(null);
-  };
-
-  const handleDismissProfile = (e: React.MouseEvent, profile: SavedAccount) => {
-    e.stopPropagation();
-    authService.removeSavedAccount(profile.email);
-    const updated = authService.getSavedAccounts();
-    setSavedAccounts(updated);
-    if (activeProfileId === profile.id) {
-      setActiveProfileId(updated.length > 0 ? updated[0].id : null);
-      setEmail(updated.length > 0 ? updated[0].email : "");
-      setPassword("");
-    }
-  };
-
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFeedback(null);
 
     if (activeMode === "signin") {
-      if (!email.trim() || !password) {
-        setFeedback({ type: "error", message: "Please enter both email and password." });
+      const cleanEmail = email.trim();
+      if (!cleanEmail || !password) {
+        setFeedback({ type: "error", message: "Please enter both your registered email and password." });
         return;
       }
 
       setIsLoading(true);
       try {
-        await authService.signIn({ email: email.trim(), password });
-        // Refresh saved accounts list so the logged-in ID immediately appears
-        setSavedAccounts(authService.getSavedAccounts());
-        setFeedback({ type: "success", message: "Sign in successful! Redirecting..." });
+        await authService.signIn({ email: cleanEmail, password });
+        setFeedback({ type: "success", message: "Authentication verified. Initializing operations console..." });
         setTimeout(() => {
           if (onLoginSuccess) onLoginSuccess();
-        }, 500);
+        }, 400);
       } catch (err: any) {
-        setFeedback({ type: "error", message: err.message || "Failed to sign in." });
+        setFeedback({ type: "error", message: err.message || "Failed to sign in. Please verify credentials." });
       } finally {
         setIsLoading(false);
       }
     } else {
       // Sign up
-      if (!fullName.trim() || !email.trim() || !password) {
-        setFeedback({ type: "error", message: "Please fill in all required fields." });
+      const cleanName = fullName.trim();
+      const cleanEmail = email.trim();
+      if (!cleanName || !cleanEmail || !password) {
+        setFeedback({ type: "error", message: "Please fill in your full name, email, and password." });
+        return;
+      }
+
+      if (password.length < 6) {
+        setFeedback({ type: "error", message: "Password must be at least 6 characters long." });
         return;
       }
 
       setIsLoading(true);
       try {
         await authService.signUp({
-          username: fullName.trim(),
-          email: email.trim(),
+          username: cleanName,
+          email: cleanEmail,
           password,
           agreeToTerms: true,
         });
-        // Refresh saved accounts list so newly registered ID immediately appears
-        setSavedAccounts(authService.getSavedAccounts());
-        setFeedback({ type: "success", message: "Account created successfully! Launching..." });
+        setFeedback({ type: "success", message: "Account created successfully! Connecting to operations workstation..." });
         setTimeout(() => {
           if (onLoginSuccess) onLoginSuccess();
-        }, 600);
+        }, 500);
       } catch (err: any) {
         setFeedback({ type: "error", message: err.message || "Failed to create account." });
       } finally {
@@ -339,97 +298,36 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
         <div className="flex-1 bg-white p-6 sm:p-10 lg:p-14 relative flex flex-col justify-between text-left select-none">
           
           <div>
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="flex items-center justify-between mb-4 sm:mb-5">
               <h2 className="text-sm font-bold text-slate-800 tracking-tight">
-                Login as
+                Operational Security & Access Control
               </h2>
-              {savedAccounts.length > 0 ? (
-                <span className="text-[11px] font-mono text-slate-400">
-                  {savedAccounts.length} saved {savedAccounts.length === 1 ? "account" : "accounts"}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const demoAccount = {
-                      id: "demo_imd",
-                      name: "Dr. R. Sundaram",
-                      email: "sundaram.radar@imd.gov.in",
-                      lastActive: "Demo Account",
-                      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=160&auto=format&fit=crop&q=80",
-                    };
-                    authService.saveAccount(demoAccount);
-                    const updated = authService.getSavedAccounts();
-                    setSavedAccounts(updated);
-                    handleSelectProfile(demoAccount);
-                  }}
-                  className="text-[11px] font-semibold text-[#0082FB] hover:underline cursor-pointer"
-                >
-                  + Add Demo Account
-                </button>
-              )}
+              <span className="text-[11px] font-mono text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 font-bold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                SECURE AUTH GATEWAY
+              </span>
             </div>
 
-            {/* Quick-Switch Profile Cards */}
-            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5">
-              {savedAccounts.map((profile) => {
-                const isSelected = activeProfileId === profile.id;
-                return (
-                  <div
-                    key={profile.id}
-                    onClick={() => handleSelectProfile(profile)}
-                    className={`relative rounded-2xl p-3 sm:p-3.5 w-[calc(50%-0.5rem)] sm:w-40 min-w-[120px] flex flex-col items-center text-center cursor-pointer transition-all duration-200 border ${
-                      isSelected
-                        ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-500/25 shadow-md scale-[1.02]"
-                        : "bg-[#F4F7FB] hover:bg-blue-50/40 border-slate-200/80 hover:border-blue-200 shadow-2xs"
-                    }`}
-                  >
-                    {/* Small Close (X) button on top right of card */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDismissProfile(e, profile)}
-                      className="absolute top-2 right-2 w-4 h-4 rounded-full bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 flex items-center justify-center text-[10px] transition-colors cursor-pointer"
-                      title="Dismiss account"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-
-                    {/* Profile Photo or Initials Badge */}
-                    <div className="relative mb-2 mt-1">
-                      {profile.avatar ? (
-                        <img
-                          src={profile.avatar}
-                          alt={profile.name}
-                          className="w-12 h-12 rounded-full object-cover shadow-sm ring-2 ring-white"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white font-extrabold flex items-center justify-center text-sm shadow-sm ring-2 ring-white">
-                          {authService.getInitials(profile.name)}
-                        </div>
-                      )}
-                      {isSelected && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                          <CheckCircle2 className="w-3 h-3" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Name & Active Status */}
-                    <div className="w-full truncate font-bold text-xs text-slate-900 leading-tight" title={profile.name}>
-                      {profile.name}
-                    </div>
-                    <div className="text-[10px] text-slate-400 font-medium mt-0.5 truncate max-w-full">
-                      {profile.lastActive || "Active recently"}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {savedAccounts.length === 0 && (
-                <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-[#F4F7FB] border border-dashed border-slate-300 text-xs text-slate-500 max-w-sm">
-                  <span>No saved accounts. Sign in or register on the right to save your account here.</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+              <div className="rounded-2xl p-4 bg-[#F4F7FB] border border-slate-200/80 text-left space-y-1.5 shadow-2xs">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shadow-inner">
+                  <Shield className="w-4 h-4" />
                 </div>
-              )}
+                <div className="font-bold text-xs text-slate-900">Individual Operator Account</div>
+                <div className="text-[11px] text-slate-500 leading-relaxed">
+                  Sign in with your registered credentials. Each operator session is strictly isolated with cryptographically signed JWT tokens.
+                </div>
+              </div>
+
+              <div className="rounded-2xl p-4 bg-[#F4F7FB] border border-slate-200/80 text-left space-y-1.5 shadow-2xs">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shadow-inner">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div className="font-bold text-xs text-slate-900">Zero Default / Shared Profiles</div>
+                <div className="text-[11px] text-slate-500 leading-relaxed">
+                  No default accounts or shared states. Create your own account to access live 0–6h nowcasting, convective threats, and GIS maps.
+                </div>
+              </div>
             </div>
           </div>
 
@@ -499,10 +397,7 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
               {/* Google Sign-in (Wide button) */}
               <button
                 type="button"
-                onClick={() => {
-                  setEmail("demo.user@gmail.com");
-                  setPassword("demo1234");
-                }}
+                onClick={() => setFeedback({ type: "error", message: "Organizational SSO requires administrative enrollment. Please sign in or register with your email below." })}
                 className="flex-1 py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 active:scale-98 border border-slate-200/90 flex items-center justify-center gap-2.5 text-xs font-bold text-slate-700 transition-all cursor-pointer shadow-2xs"
               >
                 {/* Multicolored Google "G" Icon */}
@@ -677,11 +572,11 @@ export default function Login({ onNavigateHome, onLoginSuccess }: LoginProps = {
             </form>
           </div>
 
-          {/* Quick Demo Credentials Tip */}
+          {/* Workstation Security Notice */}
           <div className="pt-4 text-center">
             <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
-              <Sparkles className="w-3 h-3 text-blue-500" />
-              <span>Demo accounts: Click any profile on the left to pre-fill</span>
+              <Shield className="w-3 h-3 text-blue-500" />
+              <span>Protected Operational Workstation • 256-Bit TLS</span>
             </div>
           </div>
         </div>
