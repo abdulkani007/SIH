@@ -1,0 +1,12 @@
+item,value
+Base dataset,Kolkata_Synthetic_Nowcasting_2023_2025
+Radar/satellite dataset,Kolkata_SYNTHETIC_RADAR_SATELLITE_PIXEL_VALUES_2023_2025
+Final rows,841728
+Final columns,28
+Years,2023-2025
+Temporal resolution,30 minutes
+Spatial grid,4 x 4 (~3 km)
+Missing cells,0
+Synchronized duplicate keys,0
+New radar channels,Reflectivity + Velocity
+New satellite channels,IR temperature + Cloud fraction

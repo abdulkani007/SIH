@@ -1,0 +1,44 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+*.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+venv/
+**/venv/
+.venv/
+**/.venv/
+env/
+**/env/
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+**/.vite/
+npm-debug.log*
+yarn-debug.log*
+
+# Logs
+*.log
+**/*.log
+
+# Datasets & large files (>100MB exceeds GitHub limits)
+*.csv
+**/*.csv
+!backend/model/COMBINATION_REPORT.csv
+!model/COMBINATION_REPORT.csv
+
+# OS files
+.DS_Store
+Thumbs.db

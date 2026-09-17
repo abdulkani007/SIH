@@ -1,0 +1,20 @@
+{
+    "channel_names": [
+        "Radar Reflectivity (dBZ)",
+        "Radar Velocity (m/s)",
+        "Satellite IR Temperature (K)",
+        "Satellite Cloud Fraction"
+    ],
+    "mins": [
+        1.755042552947998,
+        -3.3055500984191895,
+        254.04830932617188,
+        0.1959574818611145
+    ],
+    "maxs": [
+        59.117523193359375,
+        7.1442999839782715,
+        296.4685974121094,
+        0.8432462215423584
+    ]
+}
